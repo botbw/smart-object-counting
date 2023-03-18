@@ -1,5 +1,3 @@
-# pip install './resources/timm-0.1.26-py3-none-any.whl'
-# pip install pycocotools
 import sys
 import torch
 import os
@@ -12,50 +10,19 @@ import numpy as np
 import albumentations as A
 import matplotlib.pyplot as plt
 from albumentations.pytorch.transforms import ToTensorV2
-from sklearn.model_selection import StratifiedKFold
 from torch.utils.data import Dataset, DataLoader
 from torch.utils.data.sampler import SequentialSampler, RandomSampler
 from glob import glob
 
+from global_config import *
+from seperate_train_val import *
+
+os.system("pip install './resources/timm-0.1.26-py3-none-any.whl'")
+os.system("pip install pycocotools")
+
 sys.path.insert(0, "./resources/efficientdet")
 sys.path.insert(0, "./resources/omegaconf")
 
-SEED = 42
-
-
-def seed_everything(seed):
-    random.seed(seed)
-    os.environ['PYTHONHASHSEED'] = str(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed(seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = True
-
-
-seed_everything(SEED)
-
-marking = pd.read_csv('./train.csv')
-
-bboxs = np.stack(marking['bbox'].apply(lambda x: np.fromstring(x[1:-1], sep=',')))
-for i, column in enumerate(['x', 'y', 'w', 'h']):
-    marking[column] = bboxs[:, i]
-marking.drop(columns=['bbox'], inplace=True)
-
-skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
-
-df_folds = marking[['image_id']].copy()
-df_folds.loc[:, 'bbox_count'] = 1
-df_folds = df_folds.groupby('image_id').count()
-df_folds.loc[:, 'source'] = marking[['image_id', 'source']].groupby('image_id').min()['source']
-df_folds.loc[:, 'stratify_group'] = np.char.add(
-    df_folds['source'].values.astype(str),
-    df_folds['bbox_count'].apply(lambda x: f'_{x // 15}').values.astype(str)
-)
-df_folds.loc[:, 'fold'] = 0
-
-for fold_number, (train_index, val_index) in enumerate(skf.split(X=df_folds.index, y=df_folds['stratify_group'])):
-    df_folds.loc[df_folds.iloc[val_index].index, 'fold'] = fold_number
 
 """## Albumentations"""
 
@@ -210,17 +177,15 @@ class DatasetRetriever(Dataset):
         return result_image, result_boxes
 
 
-fold_number = 0
-
 train_dataset = DatasetRetriever(
-    image_ids=df_folds[df_folds['fold'] != fold_number].index.values,
+    image_ids=df_folds[df_folds['fold'] != FOLD].index.values,
     marking=marking,
     transforms=get_train_transforms(),
     test=False,
 )
 
 validation_dataset = DatasetRetriever(
-    image_ids=df_folds[df_folds['fold'] == fold_number].index.values,
+    image_ids=df_folds[df_folds['fold'] == FOLD].index.values,
     marking=marking,
     transforms=get_valid_transforms(),
     test=True,
