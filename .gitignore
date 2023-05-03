@@ -1,2 +1,6 @@
 # yolov5 training cache
 converter
+
+# IDE related
+.idea
+.vscode
