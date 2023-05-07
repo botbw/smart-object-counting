@@ -7,6 +7,11 @@ import subprocess
 import torch
 from seperate_train_val import *
 
+import sys
+sys.path.insert(0, "./resources/Weighted-Boxes-Fusion")
+
+from ensemble_boxes import *
+
 CONF_THRES = 0.5
 IOU_THRES = 0.6
 
@@ -112,6 +117,40 @@ names: ['wheat']
         )
     subprocess.call(f"python resourses/yolov5/train.py --img 1024 --batch 2 --epochs {EPOCHS} --data dataset.yaml --cfg yolov5x.yaml --name yolov5x")
 
+
+def detectSingle(im0, imgsz, model, device):
+    img = letterbox(im0, new_shape=imgsz)[0]
+    # Convert
+    img = img[:, :, ::-1].transpose(2, 0, 1)  # BGR to RGB, to 3x416x416
+    img = np.ascontiguousarray(img)
+
+
+    img = torch.from_numpy(img).to(device)
+    img =  img.float()  # uint8 to fp16/32
+    img /= 255.0   
+    if img.ndimension() == 3:
+        img = img.unsqueeze(0)
+
+    # Inference
+    pred = model(img, augment=False)[0]
+
+    # Apply NMS
+    pred = non_max_suppression(pred, CONF_THRES, IOU_THRES)
+
+    boxes = []
+    scores = []
+    for i, det in enumerate(pred):  # detections per image
+        # save_path = 'draw/' + image_id + '.jpg'
+        if det is not None and len(det):
+            # Rescale boxes from img_size to im0 size
+            det[:, :4] = scale_coords(img.shape[2:], det[:, :4], im0.shape).round()
+
+            # Write results
+            for *xyxy, conf, cls in det:
+                boxes.append([int(xyxy[0]), int(xyxy[1]), int(xyxy[2]), int(xyxy[3])])
+                scores.append(conf)
+
+    return np.array(boxes), np.array(scores)
 
 def detect(weight_path):
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
