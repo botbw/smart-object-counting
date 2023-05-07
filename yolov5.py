@@ -1,39 +1,43 @@
 import numpy as np # linear algebra
 import pandas as pd # data processing, CSV file I/O (e.g. pd.read_csv)
 import os
-
-from seperate_train_val import *
-
-os.system("pip install -r resources/yolov5/requirements.txt")
-
-index = list(set(marking.image_id))
-
 from tqdm.auto import tqdm
 import shutil as sh
+import subprocess
+import torch
+from seperate_train_val import *
 
-source = 'train'
-val_index = index[len(index) * FOLD // 5:len(index) * (FOLD + 1) // 5]
-for name, mini in tqdm(marking.groupby('image_id')):
-    if name in val_index:
-        path2save = 'val2017/'
-    else:
-        path2save = 'train2017/'
-    if not os.path.exists('convertor/fold{}/labels/'.format(FOLD) + path2save):
-        os.makedirs('convertor/fold{}/labels/'.format(FOLD) + path2save)
-    with open('convertor/fold{}/labels/'.format(FOLD) + path2save + name + ".txt", 'w+') as f:
-        row = mini[['classes','x_center','y_center','w','h']].astype(float).values
-        row = row/1024
-        row = row.astype(str)
-        for j in range(len(row)):
-            text = ' '.join(row[j])
-            f.write(text)
-            f.write("\n")
-    if not os.path.exists('convertor/fold{}/images/{}'.format(FOLD, path2save)):
-        os.makedirs('convertor/fold{}/images/{}'.format(FOLD, path2save))
-    sh.copy(DATA_DIR + "{}/{}.jpg".format(source,name),'convertor/fold{}/images/{}/{}.jpg'.format(FOLD, path2save, name))
+CONF_THRES = 0.5
+IOU_THRES = 0.6
 
-with open('yolov5x.yaml') as f:
-    f.write(
+def train_yolov5():
+    os.system("pip install -r resources/yolov5/requirements.txt")
+
+    index = list(set(marking.image_id))
+
+    source = 'train'
+    val_index = index[len(index) * FOLD // 5:len(index) * (FOLD + 1) // 5]
+    for name, mini in tqdm(marking.groupby('image_id')):
+        if name in val_index:
+            path2save = 'val2017/'
+        else:
+            path2save = 'train2017/'
+        if not os.path.exists('convertor/fold{}/labels/'.format(FOLD) + path2save):
+            os.makedirs('convertor/fold{}/labels/'.format(FOLD) + path2save)
+        with open('convertor/fold{}/labels/'.format(FOLD) + path2save + name + ".txt", 'w+') as f:
+            row = mini[['classes','x_center','y_center','w','h']].astype(float).values
+            row = row/1024
+            row = row.astype(str)
+            for j in range(len(row)):
+                text = ' '.join(row[j])
+                f.write(text)
+                f.write("\n")
+        if not os.path.exists('convertor/fold{}/images/{}'.format(FOLD, path2save)):
+            os.makedirs('convertor/fold{}/images/{}'.format(FOLD, path2save))
+        sh.copy(DATA_DIR + "{}/{}.jpg".format(source,name),'convertor/fold{}/images/{}/{}.jpg'.format(FOLD, path2save, name))
+
+    with open('yolov5x.yaml') as f:
+        f.write(
 """\
 # parameters
 nc: 1  # number of classes
@@ -81,11 +85,10 @@ head:
    [[], 1, Detect, [nc, anchors]],  # Detect(P3, P4, P5)
   ]
 """
-    )
+        )
 
-
-with open('dataset.yaml', 'w') as f:
-    f.write(
+    with open('dataset.yaml', 'w') as f:
+        f.write(
 """\
 # COCO 2017 dataset http://cocodataset.org - first 128 training images
 # Download command:  python -c "from yolov5.utils.google_utils import gdrive_download; gdrive_download('1n_oKgR81BJtqk75b00eAjdv03qVCQn2f','coco128.zip')"
@@ -105,7 +108,12 @@ nc: 1
 
 # class names
 names: ['wheat']
-""")
+"""
+        )
+    subprocess.call(f"python resourses/yolov5/train.py --img 1024 --batch 2 --epochs {EPOCHS} --data dataset.yaml --cfg yolov5x.yaml --name yolov5x")
 
-import subprocess
-subprocess.call(f"python resourses/yolov5/train.py --img 1024 --batch 2 --epochs {EPOCHS} --data dataset.yaml --cfg yolov5x.yaml --name yolov5x")
+
+def detect(weight_path):
+    device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+    model = torch.load(weight_path)['model'].float()
+    model.to(device).eval()

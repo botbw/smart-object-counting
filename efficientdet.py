@@ -23,10 +23,10 @@ os.system("pip install pycocotools")
 sys.path.insert(0, "./resources/efficientdet")
 sys.path.insert(0, "./resources/omegaconf")
 
+"""## Dataset"""
+TRAIN_ROOT_PATH = './data/train'
 
 """## Albumentations"""
-
-
 def get_train_transforms():
     return A.Compose(
         [
@@ -68,12 +68,6 @@ def get_valid_transforms():
             label_fields=['labels']
         )
     )
-
-
-"""## Dataset"""
-
-TRAIN_ROOT_PATH = './train'
-
 
 class DatasetRetriever(Dataset):
 
@@ -191,25 +185,9 @@ validation_dataset = DatasetRetriever(
     test=True,
 )
 
-image, target, image_id = train_dataset[1]
-boxes = target['boxes'].cpu().numpy().astype(np.int32)
-
-numpy_image = image.permute(1, 2, 0).cpu().numpy()
-
-fig, ax = plt.subplots(1, 1, figsize=(16, 8))
-
-for box in boxes:
-    cv2.rectangle(numpy_image, (box[1], box[0]), (box[3], box[2]), (0, 1, 0), 2)
-
-ax.set_axis_off()
-ax.imshow(numpy_image);
-
-"""## Fitter"""
-
-
+# statistics
 class AverageMeter(object):
     """Computes and stores the average and current value"""
-
     def __init__(self):
         self.reset()
 
@@ -225,14 +203,8 @@ class AverageMeter(object):
         self.count += n
         self.avg = self.sum / self.count
 
-
-import warnings
-
-warnings.filterwarnings("ignore")
-
-
+# Fitter
 class Fitter:
-
     def __init__(self, model, device, config):
         self.config = config
         self.epoch = 0
@@ -419,12 +391,24 @@ class TrainGlobalConfig:
     )
     # --------------------
 
-
 def collate_fn(batch):
     return tuple(zip(*batch))
 
+from effdet import get_efficientdet_config, EfficientDet, DetBenchTrain
+from effdet.efficientdet import HeadNet
 
-def run_training():
+
+def get_net():
+    config = get_efficientdet_config('tf_efficientdet_d7')
+    net = EfficientDet(config, pretrained_backbone=False)
+    checkpoint = torch.load('./pre-trained/tf_efficientdet_d7_53-6d1d7a95.pth')
+    net.load_state_dict(checkpoint)
+    config.num_classes = 1
+    config.image_size = 512
+    net.class_net = HeadNet(config, num_outputs=config.num_classes, norm_kwargs=dict(eps=.001, momentum=.01))
+    return DetBenchTrain(net, config)
+
+def run_training(net, train_dataset, validation_dataset):
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     net.to(device)
 
@@ -449,23 +433,3 @@ def run_training():
 
     fitter = Fitter(model=net, device=device, config=TrainGlobalConfig)
     fitter.fit(train_loader, val_loader)
-
-
-from effdet import get_efficientdet_config, EfficientDet, DetBenchTrain
-from effdet.efficientdet import HeadNet
-
-
-def get_net():
-    config = get_efficientdet_config('tf_efficientdet_d7')
-    net = EfficientDet(config, pretrained_backbone=False)
-    checkpoint = torch.load('./pre-trained/tf_efficientdet_d7_53-6d1d7a95.pth')
-    net.load_state_dict(checkpoint)
-    config.num_classes = 1
-    config.image_size = 512
-    net.class_net = HeadNet(config, num_outputs=config.num_classes, norm_kwargs=dict(eps=.001, momentum=.01))
-    return DetBenchTrain(net, config)
-
-
-net = get_net()
-
-run_training()
