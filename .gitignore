@@ -4,3 +4,7 @@ converter
 # IDE related
 .idea
 .vscode
+
+
+# some temporal files
+tmp.py
