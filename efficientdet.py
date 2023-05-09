@@ -8,25 +8,17 @@ import cv2
 import pandas as pd
 import numpy as np
 import albumentations as A
-import matplotlib.pyplot as plt
 from albumentations.pytorch.transforms import ToTensorV2
 from torch.utils.data import Dataset, DataLoader
 from torch.utils.data.sampler import SequentialSampler, RandomSampler
 from glob import glob
 
 from global_config import *
-from seperate_train_val import *
-
-os.system("pip install './resources/timm-0.1.26-py3-none-any.whl'")
-os.system("pip install pycocotools")
 
 sys.path.insert(0, "./resources/efficientdet")
 sys.path.insert(0, "./resources/omegaconf")
 
-"""## Dataset"""
-TRAIN_ROOT_PATH = './data/train'
-
-"""## Albumentations"""
+# Albumentations
 def get_train_transforms():
     return A.Compose(
         [
@@ -53,7 +45,7 @@ def get_train_transforms():
         )
     )
 
-
+# transform for validation set
 def get_valid_transforms():
     return A.Compose(
         [
@@ -70,10 +62,8 @@ def get_valid_transforms():
     )
 
 class DatasetRetriever(Dataset):
-
     def __init__(self, marking, image_ids, transforms=None, test=False):
         super().__init__()
-
         self.image_ids = image_ids
         self.marking = marking
         self.transforms = transforms
@@ -81,7 +71,7 @@ class DatasetRetriever(Dataset):
 
     def __getitem__(self, index: int):
         image_id = self.image_ids[index]
-
+        # for half of the image, we perform a cutmix
         if self.test or random.random() > 0.5:
             image, boxes = self.load_image_and_boxes(index)
         else:
@@ -124,6 +114,7 @@ class DatasetRetriever(Dataset):
         boxes[:, 3] = boxes[:, 1] + boxes[:, 3]
         return image, boxes
 
+    # cutmix augmentation, see description
     def load_cutmix_image_and_boxes(self, index, imsize=1024):
         """
         This implementation of cutmix author:  https://www.kaggle.com/nvnnghia
@@ -170,22 +161,7 @@ class DatasetRetriever(Dataset):
             np.where((result_boxes[:, 2] - result_boxes[:, 0]) * (result_boxes[:, 3] - result_boxes[:, 1]) > 0)]
         return result_image, result_boxes
 
-
-train_dataset = DatasetRetriever(
-    image_ids=df_folds[df_folds['fold'] != FOLD].index.values,
-    marking=marking,
-    transforms=get_train_transforms(),
-    test=False,
-)
-
-validation_dataset = DatasetRetriever(
-    image_ids=df_folds[df_folds['fold'] == FOLD].index.values,
-    marking=marking,
-    transforms=get_valid_transforms(),
-    test=True,
-)
-
-# statistics
+# Statistics
 class AverageMeter(object):
     """Computes and stores the average and current value"""
     def __init__(self):
@@ -214,19 +190,12 @@ class Fitter:
             os.makedirs(self.base_dir)
 
         self.log_path = f'{self.base_dir}/log.txt'
-        self.best_summary_loss = 10 ** 5
+        self.best_summary_loss = 10 ** 9
 
         self.train_his = pd.DataFrame(columns=['train_loss', 'val_loss'])
 
         self.model = model
         self.device = device
-
-        param_optimizer = list(self.model.named_parameters())
-        no_decay = ['bias', 'LayerNorm.bias', 'LayerNorm.weight']
-        optimizer_grouped_parameters = [
-            {'params': [p for n, p in param_optimizer if not any(nd in n for nd in no_decay)], 'weight_decay': 0.001},
-            {'params': [p for n, p in param_optimizer if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
-        ]
 
         self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=config.lr)
         self.scheduler = config.SchedulerClass(self.optimizer, **config.scheduler_params)
@@ -351,31 +320,18 @@ class Fitter:
 
 
 class TrainGlobalConfig:
+    folder = CACHE_DIR + 'EfficientDet'
+
     num_workers = 2
     batch_size = 4
-    n_epochs = 40  # n_epochs = 40
+    n_epochs = 40
     lr = 0.0002
 
-    folder = 'effdet7-cutmix-augmix'
-
-    # -------------------
+    
     verbose = True
     verbose_step = 1
-    # -------------------
-
-    # --------------------
     step_scheduler = False  # do scheduler.step after optimizer.step
     validation_scheduler = True  # do scheduler.step after validation stage loss
-
-    #     SchedulerClass = torch.optim.lr_scheduler.OneCycleLR
-    #     scheduler_params = dict(
-    #         max_lr=0.001,
-    #         epochs=n_epochs,
-    #         steps_per_epoch=int(len(train_dataset) / batch_size),
-    #         pct_start=0.1,
-    #         anneal_strategy='cos',
-    #         final_div_factor=10**5
-    #     )
 
     SchedulerClass = torch.optim.lr_scheduler.ReduceLROnPlateau
     scheduler_params = dict(
@@ -389,7 +345,6 @@ class TrainGlobalConfig:
         min_lr=1e-8,
         eps=1e-08
     )
-    # --------------------
 
 def collate_fn(batch):
     return tuple(zip(*batch))
@@ -401,18 +356,65 @@ from effdet.efficientdet import HeadNet
 def get_net():
     config = get_efficientdet_config('tf_efficientdet_d7')
     net = EfficientDet(config, pretrained_backbone=False)
-    checkpoint = torch.load('./pre-trained/tf_efficientdet_d7_53-6d1d7a95.pth')
+    checkpoint_path = TrainGlobalConfig.folder + "/pretrain.pt"
+    print("Downloading pretrained ")
+    if not os.path.isfile(checkpoint_path):
+        os.get(f'wget \
+              https://github.com/rwightman/efficientdet-pytorch/releases/download/v0.1/tf_efficientdet_d7_53-6d1d7a95.pth \
+              -O {checkpoint_path}')
+    checkpoint = torch.load(checkpoint_path)
     net.load_state_dict(checkpoint)
     config.num_classes = 1
     config.image_size = 512
     net.class_net = HeadNet(config, num_outputs=config.num_classes, norm_kwargs=dict(eps=.001, momentum=.01))
     return DetBenchTrain(net, config)
 
-def run_training(net, train_dataset, validation_dataset):
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    net.to(device)
+def train_efficientdet():
+# prepare for dataset    
+    # set fold for validation
+    FOLD = 0
+    # read dataset metadata
+    marking = pd.read_csv(DATA_DIR + 'train.csv')
+    # convert string to int list
+    bboxs = np.stack(marking['bbox'].apply(lambda x: np.fromstring(x[1:-1], sep=',')))
+    # reformat the target bounding boxes for yolo format, F-RCNN format...
+    for i, column in enumerate(['x', 'y', 'w', 'h']):
+        marking[column] = bboxs[:, i]
+    marking.drop(columns=['bbox'], inplace=True)
+    marking['x_center'] = marking['x'] + marking['w']/2
+    marking['y_center'] = marking['y'] + marking['h']/2
+    # single class in this dataset
+    marking['classes'] = 0
 
-    train_loader = torch.utils.data.DataLoader(
+    # group data uniformly
+    skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=SEED)
+    df_folds = marking[['image_id']].copy()
+    df_folds.loc[:, 'bbox_count'] = 1
+    df_folds = df_folds.groupby('image_id').count() # calculate the target frequency for each image
+    df_folds.loc[:, 'source'] = marking[['image_id', 'source']].groupby('image_id').min()['source'] # group by source
+    df_folds.loc[:, 'stratify_group'] = np.char.add(
+        df_folds['source'].values.astype(str),
+        df_folds['bbox_count'].apply(lambda x: f'_{x // 15}').values.astype(str)
+    )
+    # assign fold number
+    df_folds.loc[:, 'fold'] = 0
+    for fold_number, (train_index, val_index) in enumerate(skf.split(X=df_folds.index, y=df_folds['stratify_group'])):
+        df_folds.loc[df_folds.iloc[val_index].index, 'fold'] = fold_number
+
+    # prepare dataset and dataloader
+    train_dataset = DatasetRetriever(
+        image_ids=df_folds[df_folds['fold'] != FOLD].index.values,
+        marking=marking,
+        transforms=get_train_transforms(),
+        test=False,
+    )
+    validation_dataset = DatasetRetriever(
+        image_ids=df_folds[df_folds['fold'] == FOLD].index.values,
+        marking=marking,
+        transforms=get_valid_transforms(),
+        test=True,
+    )
+    train_loader = DataLoader(
         train_dataset,
         batch_size=TrainGlobalConfig.batch_size,
         sampler=RandomSampler(train_dataset),
@@ -421,7 +423,7 @@ def run_training(net, train_dataset, validation_dataset):
         num_workers=TrainGlobalConfig.num_workers,
         collate_fn=collate_fn,
     )
-    val_loader = torch.utils.data.DataLoader(
+    val_loader = DataLoader(
         validation_dataset,
         batch_size=TrainGlobalConfig.batch_size,
         num_workers=TrainGlobalConfig.num_workers,
@@ -430,6 +432,12 @@ def run_training(net, train_dataset, validation_dataset):
         pin_memory=False,
         collate_fn=collate_fn,
     )
-
+# prepare for models and devices
+    # find available devices
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    # get a fresh model
+    net = get_net()
+    net.to(device)
+# start training
     fitter = Fitter(model=net, device=device, config=TrainGlobalConfig)
     fitter.fit(train_loader, val_loader)

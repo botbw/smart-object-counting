@@ -1,6 +1,10 @@
-DATA_DIR = './resources/dataset/'
-CACHE_DIR = './cache/'
+import os
+import random
+import numpy as np
+import torch
 
+# call before train
+SEED = 42
 def seed_everything(seed):
     random.seed(seed)
     os.environ['PYTHONHASHSEED'] = str(seed)
@@ -10,7 +14,10 @@ def seed_everything(seed):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = True
 
-SEED = 42
+# dataset config
+DATA_DIR = './data/'
+TRAIN_ROOT_PATH = DATA_DIR + 'train'
 
-EPOCHS = 40
+# train cache
+CACHE_DIR = './cache/'
 
