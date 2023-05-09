@@ -5,6 +5,11 @@ converter
 .idea
 .vscode
 
+# dataset
+data/*
+
+# cache
+cache/*
 
 # some temporal files
 tmp.py
