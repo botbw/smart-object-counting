@@ -16,6 +16,7 @@ from glob import glob
 from global_config import *
 
 sys.path.insert(0, "./resources/efficientdet")
+sys.path.insert(0, "./resources/omegaconf")
 
 # Albumentations
 def get_train_transforms():
@@ -319,7 +320,7 @@ class Fitter:
 
 
 class TrainGlobalConfig:
-    folder = CACHE_DIR + 'EfficientDet'
+    folder = CACHE_DIR + 'efficientdet'
 
     num_workers = 2
     batch_size = 4
@@ -355,10 +356,12 @@ from effdet.efficientdet import HeadNet
 def get_net():
     config = get_efficientdet_config('tf_efficientdet_d7')
     net = EfficientDet(config, pretrained_backbone=False)
-    checkpoint_path = TrainGlobalConfig.folder + "/pretrain.pt"
+    if not os.path.isdir(TrainGlobalConfig.folder):
+        os.mkdir(TrainGlobalConfig.folder)
+    checkpoint_path = TrainGlobalConfig.folder + "/tf_efficientdet_d7_53-6d1d7a95.pth"
     print("Downloading pretrained ")
     if not os.path.isfile(checkpoint_path):
-        os.get(f'wget \
+        os.system(f'wget \
               https://github.com/rwightman/efficientdet-pytorch/releases/download/v0.1/tf_efficientdet_d7_53-6d1d7a95.pth \
               -O {checkpoint_path}')
     checkpoint = torch.load(checkpoint_path)
