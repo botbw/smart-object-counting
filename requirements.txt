@@ -1,3 +1,5 @@
 torch
 timm
 pandas
+numpy
+albumentation

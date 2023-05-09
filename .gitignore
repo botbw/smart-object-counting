@@ -8,3 +8,4 @@ converter
 
 # some temporal files
 tmp.py
+__pycache__

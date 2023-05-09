@@ -1,3 +1,5 @@
+import sys
+sys.path.insert(0, "./resources/Weighted-Boxes-Fusion")
 import numpy as np # linear algebra
 import os
 from tqdm.auto import tqdm
@@ -5,11 +7,7 @@ import shutil as sh
 import subprocess
 import torch
 import cv2
-from seperate_train_val import *
-
-import sys
-sys.path.insert(0, "./resources/Weighted-Boxes-Fusion")
-
+from global_config import *
 from ensemble_boxes import *
 
 YOLO_CONF_THRES = 0.5
@@ -22,21 +20,18 @@ def format_prediction(boxes, scores):
         pred_strings.append(f"{j[0]:.4f} {j[1][0]} {j[1][1]} {j[1][2]} {j[1][3]}")
     return " ".join(pred_strings)
 
-def train_yolov5():
-    os.system("pip install -r resources/yolov5/requirements.txt")
-
+def train_yolov5(marking, fold):
     index = list(set(marking.image_id))
-
     source = 'train'
-    val_index = index[len(index) * FOLD // 5:len(index) * (FOLD + 1) // 5]
+    val_index = index[len(index) * fold // 5:len(index) * (fold + 1) // 5]
     for name, mini in tqdm(marking.groupby('image_id')):
         if name in val_index:
-            path2save = 'val2017/'
+            path2save = CACHE_DIR + 'val2017/'
         else:
-            path2save = 'train2017/'
-        if not os.path.exists('convertor/fold{}/labels/'.format(FOLD) + path2save):
-            os.makedirs('convertor/fold{}/labels/'.format(FOLD) + path2save)
-        with open('convertor/fold{}/labels/'.format(FOLD) + path2save + name + ".txt", 'w+') as f:
+            path2save = CACHE_DIR + 'train2017/'
+        if not os.path.exists(CACHE_DIR + 'convertor/fold{}/labels/'.format(fold) + path2save):
+            os.makedirs(CACHE_DIR + 'convertor/fold{}/labels/'.format(fold) + path2save)
+        with open(CACHE_DIR + 'convertor/fold{}/labels/'.format(fold) + path2save + name + ".txt", 'w+') as f:
             row = mini[['classes','x_center','y_center','w','h']].astype(float).values
             row = row/1024
             row = row.astype(str)
@@ -44,9 +39,9 @@ def train_yolov5():
                 text = ' '.join(row[j])
                 f.write(text)
                 f.write("\n")
-        if not os.path.exists('convertor/fold{}/images/{}'.format(FOLD, path2save)):
-            os.makedirs('convertor/fold{}/images/{}'.format(FOLD, path2save))
-        sh.copy(DATA_DIR + "{}/{}.jpg".format(source,name),'convertor/fold{}/images/{}/{}.jpg'.format(FOLD, path2save, name))
+        if not os.path.exists(CACHE_DIR + 'convertor/fold{}/images/{}'.format(fold, path2save)):
+            os.makedirs(CACHE_DIR + 'convertor/fold{}/images/{}'.format(fold, path2save))
+        sh.copy(DATA_DIR + "{}/{}.jpg".format(source,name),'convertor/fold{}/images/{}/{}.jpg'.format(fold, path2save, name))
 
     with open('yolov5x.yaml') as f:
         f.write(
@@ -122,7 +117,7 @@ nc: 1
 names: ['wheat']
 """
         )
-    subprocess.call(f"python resourses/yolov5/train.py --img 1024 --batch 2 --epochs {EPOCHS} --data dataset.yaml --cfg yolov5x.yaml --name yolov5x")
+    subprocess.call(f"python resourses/yolov5/train.py --img 1024 --batch 2 --epochs 50 --data dataset.yaml --cfg yolov5x.yaml --name yolov5x")
 
 
 def detectSingle(im0, imgsz, model, device, conf_thres, iou_thres):
