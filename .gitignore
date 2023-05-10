@@ -2,6 +2,7 @@
 convertor
 dataset.yaml
 yolov5x.yaml
+runs
 
 # IDE related
 .idea
@@ -13,6 +14,7 @@ data/*
 # cache
 cache/*
 
-# some temporal files
+# some temporal files and weights
+*.pt
 tmp.py
 __pycache__
