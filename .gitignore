@@ -1,5 +1,7 @@
 # yolov5 training cache
 convertor
+dataset.yaml
+yolov5x.yaml
 
 # IDE related
 .idea
