@@ -358,11 +358,11 @@ def get_net():
     net = EfficientDet(config, pretrained_backbone=False)
     if not os.path.isdir(TrainGlobalConfig.folder):
         os.mkdir(TrainGlobalConfig.folder)
-    checkpoint_path = TrainGlobalConfig.folder + "/tf_efficientdet_d7_53-6d1d7a95.pth"
+    checkpoint_path = TrainGlobalConfig.folder + "/efficientdet_d7-f05bf714.pth"
     print("Downloading pretrained ")
     if not os.path.isfile(checkpoint_path):
         os.system(f'wget \
-              https://github.com/rwightman/efficientdet-pytorch/releases/download/v0.1/tf_efficientdet_d7_53-6d1d7a95.pth \
+              https://github.com/rwightman/efficientdet-pytorch/releases/download/v0.1/efficientdet_d7-f05bf714.pth \
               -O {checkpoint_path}')
     checkpoint = torch.load(checkpoint_path)
     net.load_state_dict(checkpoint)

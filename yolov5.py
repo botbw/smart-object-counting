@@ -4,7 +4,6 @@ import numpy as np # linear algebra
 import os
 from tqdm.auto import tqdm
 import shutil as sh
-import subprocess
 import torch
 import cv2
 from global_config import *
@@ -70,16 +69,16 @@ names: ['wheat']
 """
         )
     device = "0" if torch.cuda.is_available() else "cpu"
-    subprocess.call(f"\
-                    python resources/yolov5/train.py \
-                    --data dataset.yaml \
-                    --cfg resources/yolov5/models/yolov5x.yaml \
-                    --weights resources/yolov5/yolov5x.pt \
-                    --epochs 50 \
-                    --img 1024 \
-                    --batch -1 \
-                    --device {device} \
-                    --optimizer SGD \
+    os.system(f"\
+python resources/yolov5/train.py \
+--data dataset.yaml \
+--cfg resources/yolov5/models/yolov5x.yaml \
+--weights resources/yolov5/yolov5x.pt \
+--epochs 50 \
+--img 1024 \
+--batch -1 \
+--device {device} \
+--optimizer SGD \
                     ")
 
 
