@@ -18,3 +18,4 @@ cache/*
 *.pt
 tmp.py
 __pycache__
+*.png
