@@ -233,7 +233,7 @@ class Fitter:
 
             self.train_his = self.train_his.append(
                 {'epoch': self.epoch, 'train_loss': train_loss_avg, 'val_loss': val_loss_avg}, ignore_index=True)
-            self.train_his.to_csv('train_his.csv', mode='a')
+            self.train_his.to_csv('train_his.csv')
             self.epoch += 1
 
     def validation(self, val_loader):
