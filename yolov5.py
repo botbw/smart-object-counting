@@ -1,23 +1,20 @@
 import sys
 sys.path.insert(0, "./resources/Weighted-Boxes-Fusion")
+sys.path.insert(0, './resources/yolov5')
 import numpy as np # linear algebra
 import os
 from tqdm.auto import tqdm
 import shutil as sh
-import torch
+import torch, torch_utils
 import cv2
 from global_config import *
 from ensemble_boxes import *
+from utils.augmentations import *
+from utils.general import *
 
 YOLO_CONF_THRES = 0.5
 YOLO_IOU_THRES = 0.6
 YOLO_IMG_SZ = 1024
-
-def format_prediction(boxes, scores):
-    pred_strings = []
-    for j in zip(scores, boxes):
-        pred_strings.append(f"{j[0]:.4f} {j[1][0]} {j[1][1]} {j[1][2]} {j[1][3]}")
-    return " ".join(pred_strings)
 
 def train_yolov5(marking, fold):
     index = list(set(marking.image_id))
@@ -81,6 +78,27 @@ python resources/yolov5/train.py \
 --optimizer SGD \
                     ")
 
+def clip_coords(boxes, img_shape):
+    # Clip bounding xyxy bounding boxes to image shape (height, width)
+    boxes[:, 0].clamp_(0, img_shape[1])  # x1
+    boxes[:, 1].clamp_(0, img_shape[0])  # y1
+    boxes[:, 2].clamp_(0, img_shape[1])  # x2
+    boxes[:, 3].clamp_(0, img_shape[0])  # y2
+
+def scale_coords(img1_shape, coords, img0_shape, ratio_pad=None):
+    # Rescale coords (xyxy) from img1_shape to img0_shape
+    if ratio_pad is None:  # calculate from img0_shape
+        gain = max(img1_shape) / max(img0_shape)  # gain  = old / new
+        pad = (img1_shape[1] - img0_shape[1] * gain) / 2, (img1_shape[0] - img0_shape[0] * gain) / 2  # wh padding
+    else:
+        gain = ratio_pad[0][0]
+        pad = ratio_pad[1]
+
+    coords[:, [0, 2]] -= pad[0]  # x padding
+    coords[:, [1, 3]] -= pad[1]  # y padding
+    coords[:, :4] /= gain
+    clip_coords(coords, img0_shape)
+    return coords
 
 def detectSingle(im0, imgsz, model, device, conf_thres, iou_thres):
     img = letterbox(im0, new_shape=imgsz)[0]
@@ -114,34 +132,44 @@ def detectSingle(im0, imgsz, model, device, conf_thres, iou_thres):
                 boxes.append([int(xyxy[0]), int(xyxy[1]), int(xyxy[2]), int(xyxy[3])])
                 scores.append(conf)
 
-    return np.array(boxes), np.array(scores)
+    return torch.tensor(boxes), torch.tensor(scores)
 
+def format_prediction(boxes, scores):
+    pred_strings = []
+    for j in zip(scores, boxes):
+        pred_strings.append(f"{j[0]:.4f} {j[1][0]} {j[1][1]} {j[1][2]} {j[1][3]}")
+    return " ".join(pred_strings)
 def detect(weight_path, test_path):
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
-    model = torch.load(weight_path)['model'].float()
-    model.to(device).eval()
+    model = torch.load(weight_path, map_location=device)['model'].to(device).float().eval()
 
-    imagenames = os.listdir(test_path)
-
+    image_ids=np.array([path.split('/')[-1][:-4] for path in glob(f'{test_path}/*.jpg')])
     results = []
-    for name in imagenames:
-        image_id = name.split('.')[0]
-        im01 = cv2.imread(name)  # BGR
-        assert im01 is not None, 'Image Not Found ' + name
-        # Padded resize
-        im_w, im_h = im01.shape[:2]
+    for image_id in image_ids:
+        try:
+            image_path = f'{test_path}/{image_id}.jpg'
+            im01 = cv2.imread(image_path)  # BGR
+            assert im01 is not None, 'Image Not Found ' + name
+            # Padded resize
+            im_w, im_h = im01.shape[:2]
 
-        boxes, scores = detectSingle(im01, YOLO_IMG_SZ, model, device, YOLO_CONF_THRES, YOLO_IOU_THRES)
+            boxes, scores = detectSingle(im01, YOLO_IMG_SZ, model, device, YOLO_CONF_THRES, YOLO_IOU_THRES)
 
-        boxes[:, 2] = boxes[:, 2] - boxes[:, 0]
-        boxes[:, 3] = boxes[:, 3] - boxes[:, 1]
+            boxes[:, 2] = boxes[:, 2] - boxes[:, 0]
+            boxes[:, 3] = boxes[:, 3] - boxes[:, 1]
 
-        boxes = boxes[scores >= 0.05].astype(np.int32)
-        scores = scores[scores >=float(0.05)]
+            boxes = boxes[scores >= 0.05].type(torch.int32)
+            scores = scores[scores >=float(0.05)]
 
-        result = {
-            'image_id': image_id,
-            'PredictionString': format_prediction(boxes, scores)
-        }
-        results.append(result)
+            result = {
+                'image_id': image_id,
+                'PredictionString': format_prediction(boxes, scores)
+            }
+            results.append(result)
+        except Exception as e:
+            result = {
+                'image_id': image_id,
+                'PredictionString': ''
+            }
+            results.append(result)
     return results
