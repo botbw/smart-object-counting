@@ -134,11 +134,6 @@ def detectSingle(im0, imgsz, model, device, conf_thres, iou_thres):
 
     return torch.tensor(boxes), torch.tensor(scores)
 
-def format_prediction(boxes, scores):
-    pred_strings = []
-    for j in zip(scores, boxes):
-        pred_strings.append(f"{j[0]:.4f} {j[1][0]} {j[1][1]} {j[1][2]} {j[1][3]}")
-    return " ".join(pred_strings)
 def detect(weight_path, test_path):
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
     model = torch.load(weight_path, map_location=device)['model'].to(device).float().eval()
