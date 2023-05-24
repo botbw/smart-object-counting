@@ -324,7 +324,7 @@ class Fitter:
 
 
 class TrainGlobalConfig:
-    folder = CACHE_DIR + 'efficientdet'
+    folder = CACHE_DIR + '/efficientdet'
 
     num_workers = 2
     batch_size = 4
@@ -414,7 +414,7 @@ def train_efficientdet(marking, df_folds, fold):
     fitter.fit(train_loader, val_loader)
 
 
-def load_net(checkpoint_path = 'cache/efficientdet/best-checkpoint-039epoch.bin'):
+def load_net(checkpoint_path):
     config = get_efficientdet_config('tf_efficientdet_d7')
     net = EfficientDet(config, pretrained_backbone=False)
 
@@ -458,14 +458,8 @@ def run_wbf(predictions, image_index, image_size=512, iou_thr=0.44, skip_box_thr
     boxes = boxes*(image_size-1)
     return boxes, scores, labels
 
-def format_prediction_string(boxes, scores):
-    pred_strings = []
-    for j in zip(scores, boxes):
-        pred_strings.append("{0:.4f} {1} {2} {3} {4}".format(j[0], j[1][0], j[1][1], j[1][2], j[1][3]))
-    return " ".join(pred_strings)
-
-def detect(testLoader, path2weight):
-    net = load_net()
+def detect(testLoader, path2weight = 'cache/efficientdet/best-checkpoint-039epoch.bin'):
+    net = load_net(path2weight)
 
     results = []
 
